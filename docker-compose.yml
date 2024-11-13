@@ -1,0 +1,76 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: wurstmeister/kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_CREATE_TOPICS: "transactions:3:1, fraud_alerts:3:1, high_value_transactions:3:1"
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: [ "CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:4.4
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+        - ./mongo-data-4-4:/data/db
+    healthcheck:
+      test: [ "CMD", "mongo", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  transaction-producer:
+    build: ./transaction-producer
+    container_name: transaction-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  stream-processor:
+    build: ./stream-processor
+    container_name: stream-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  fraud-consumer:
+    build: ./fraud-consumer
+    container_name: fraud-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  high-value-consumer:
+    build: ./high-value-consumer
+    container_name: high-value-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+          condition: service_healthy
+
+  transaction-logger:
+    build: ./transaction-logger
+    container_name: transaction-logger
+    depends_on:
+      kafka:
+        condition: service_healthy
